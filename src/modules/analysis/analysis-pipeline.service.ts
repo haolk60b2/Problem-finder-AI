@@ -1,17 +1,21 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { DocumentType } from 'src/common/enums/document-type.enum';
 import { RunStatus } from 'src/common/enums/run-status.enum';
 import { SourceType } from 'src/common/enums/source-type.enum';
 import { AiService } from '../ai/ai.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { RedditService } from '../reddit/reddit.service';
 import { NormalizedDocument } from './interfaces/normalized-document.interface';
 
 @Injectable()
 export class AnalysisPipelineService {
+  private readonly logger = new Logger(AnalysisPipelineService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly aiService: AiService,
+    private readonly redditService: RedditService,
   ) {}
 
   async execute(runId: string, projectId: string, filters: Record<string, unknown>) {
@@ -134,20 +138,83 @@ export class AnalysisPipelineService {
     const selectedSourceTypes = Array.isArray(filters.sourceTypes)
       ? (filters.sourceTypes as SourceType[])
       : project.sources.map((source: any) => source.type as SourceType);
+    const documents = await Promise.all(
+      selectedSourceTypes.map(async (sourceType: SourceType, index: number) => {
+        if (sourceType === SourceType.REDDIT) {
+          const redditSources = project.sources.filter(
+            (source: any) => source.type === SourceType.REDDIT,
+          );
+          const query =
+            typeof filters.niche === 'string' && filters.niche.trim().length > 0
+              ? filters.niche
+              : project.niche;
 
-    return selectedSourceTypes.map((sourceType: SourceType, index: number) => ({
+          try {
+            const redditDocuments = await this.fetchRedditDocuments(query, redditSources);
+            if (redditDocuments.length > 0) {
+              return redditDocuments;
+            }
+          } catch (error) {
+            const message = error instanceof Error ? error.message : 'Unknown Reddit error';
+            this.logger.warn(`Falling back to mock Reddit documents: ${message}`);
+          }
+        }
+
+        return [this.createMockDocument(project.niche, sourceType, index)];
+      }),
+    );
+
+    return this.deduplicateDocuments(documents.flat());
+  }
+
+  private async fetchRedditDocuments(query: string, redditSources: any[]) {
+    const configs = redditSources.length > 0 ? redditSources : [{ configJson: {} }];
+    const collected = await Promise.all(
+      configs.map((source) =>
+        this.redditService.collectDocuments(
+          query,
+          (source.configJson ?? {}) as {
+            subreddits?: string[];
+            limit?: number;
+            sort?: 'relevance' | 'hot' | 'top' | 'new' | 'comments';
+            time?: 'hour' | 'day' | 'week' | 'month' | 'year' | 'all';
+            includeComments?: boolean;
+            commentsPerPost?: number;
+          },
+        ),
+      ),
+    );
+
+    return collected.flat();
+  }
+
+  private createMockDocument(niche: string, sourceType: SourceType, index: number): NormalizedDocument {
+    return {
       externalId: `${sourceType}-${index + 1}`,
       sourceType,
       documentType: DocumentType.POST,
       title: `Collected feedback from ${sourceType}`,
-      content: `Users say they hate how manual and slow the workflow is in ${project.niche}. They want a simpler system with fewer repetitive steps.`,
+      content: `Users say they hate how manual and slow the workflow is in ${niche}. They want a simpler system with fewer repetitive steps.`,
       author: 'community-user',
       url: `https://example.com/${sourceType}/${index + 1}`,
       publishedAt: new Date(),
       metadata: {
         mocked: true,
       },
-    }));
+    };
+  }
+
+  private deduplicateDocuments(documents: NormalizedDocument[]) {
+    const byExternalId = new Map<string, NormalizedDocument>();
+
+    for (const document of documents) {
+      const key = `${document.sourceType}:${document.externalId}`;
+      if (!byExternalId.has(key)) {
+        byExternalId.set(key, document);
+      }
+    }
+
+    return Array.from(byExternalId.values());
   }
 
   private async persistDocuments(projectId: string, documents: NormalizedDocument[]) {

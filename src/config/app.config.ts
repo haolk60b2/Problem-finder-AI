@@ -11,6 +11,10 @@ export const appConfig = registerAs('app', () => ({
   openAiApiKey: process.env.OPENAI_API_KEY ?? '',
   openAiModel: process.env.OPENAI_MODEL ?? 'gpt-4.1-mini',
   embeddingModel: process.env.EMBEDDING_MODEL ?? 'text-embedding-3-small',
+  redditClientId: process.env.REDDIT_CLIENT_ID ?? '',
+  redditClientSecret: process.env.REDDIT_CLIENT_SECRET ?? '',
+  redditUserAgent:
+    process.env.REDDIT_USER_AGENT ?? 'problem-finder-ai/0.1 by problem_finder_ai',
 }));
 
 export function validateEnv(config: EnvInput) {
@@ -24,4 +28,3 @@ export function validateEnv(config: EnvInput) {
 
   return config;
 }
-

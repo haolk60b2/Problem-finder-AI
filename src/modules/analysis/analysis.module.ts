@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { AiModule } from '../ai/ai.module';
+import { RedditService } from '../reddit/reddit.service';
 import { AnalysisController } from './analysis.controller';
 import { AnalysisService } from './analysis.service';
 import { AnalysisProcessor } from './analysis.processor';
@@ -15,6 +16,6 @@ import { ANALYSIS_QUEUE } from './constants/analysis-job.constant';
     }),
   ],
   controllers: [AnalysisController],
-  providers: [AnalysisService, AnalysisProcessor, AnalysisPipelineService],
+  providers: [AnalysisService, AnalysisProcessor, AnalysisPipelineService, RedditService],
 })
 export class AnalysisModule {}

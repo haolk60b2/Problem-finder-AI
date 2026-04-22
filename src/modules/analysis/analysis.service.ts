@@ -1,5 +1,5 @@
 import { InjectQueue } from '@nestjs/bullmq';
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
 import { ANALYSIS_JOB, ANALYSIS_QUEUE } from './constants/analysis-job.constant';
@@ -14,6 +14,19 @@ export class AnalysisService {
   ) {}
 
   async createRun(dto: CreateAnalysisDto) {
+    const project = await this.prisma.project.findUnique({
+      where: {
+        id: dto.projectId,
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    if (!project) {
+      throw new NotFoundException(`Project "${dto.projectId}" does not exist.`);
+    }
+
     const run = await this.prisma.analysisRun.create({
       data: {
         projectId: dto.projectId,
@@ -64,4 +77,3 @@ export class AnalysisService {
     });
   }
 }
-
